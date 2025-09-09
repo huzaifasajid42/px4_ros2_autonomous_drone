@@ -75,81 +75,89 @@ Launch the mission controller node
 
 ## Installation & Setup
 
-# 1. Install ROS 2 Humble
+### 1. Install ROS 2 Humble
 sudo apt update && sudo apt install ros-humble-desktop
 
-# 2. Install MAVROS
+### 2. Install MAVROS
 sudo apt install ros-humble-mavros ros-humble-mavros-msgs
 
-# 3. Install PX4 Autopilot
+### 3. Install PX4 Autopilot
 sudo apt install git make python3-pip
 git clone https://github.com/PX4/PX4-Autopilot.git ~/PX4-Autopilot
 cd ~/PX4-Autopilot
 make px4_sitl jmavsim   # or: make px4_sitl gz_x500
 
-# 4. Setup ROS environment
+### 4. Setup ROS environment
 echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
 source ~/.bashrc
 
-# 5. Build workspace
+### 5. Build workspace
 cd ~/px4_ros_ws
 colcon build --packages-select drone_controller
 source install/setup.bash
 
+---
+
 ## Failsafes & Safety Checks in the Node
 The mission controller includes these safety mechanisms:
 
-# Pose timeout
+### Pose timeout
 Logs an error if /mavros/local_position/pose stops updating.
 
-# Setpoint streaming
+### Setpoint streaming
 Publishes at ~50 Hz to maintain OFFBOARD mode.
 
-# Takeoff timeout (10 s)
+### Takeoff timeout (10 s)
 Skip takeoff if altitude not reached.
 
-# Waypoint timeout (12 s)
+### Waypoint timeout (12 s)
 Skip waypoint if not reached in time.
 
-# Waypoint hold + hysteresis
+### Waypoint hold + hysteresis
 Require 3 s hold within 0.5 m of target. Reset if drift > 0.75 m.
 
-# Landing handoff
+### Landing handoff
 Switch to PX4 AUTO.LAND for descent & disarm.
 
-# Disarm detection
+### Disarm detection
 Once PX4 disarms, the node shuts down.
 
 ## Telemetry Logging
 Location: ~/drone_telemetry
 File name: mission_telemetry_YYYYMMDD_HHMMSS.csv
 
+---
+
 ## Design Notes
 
-# FSM Design
+### FSM Design
 The mission logic is a finite state machine with states:
 DISARMED → SETPOINT_STREAMING → ARMING → ARMING_WAIT → ARMED → TAKEOFF → MISSION → LANDING → LANDED.
 
-# Control strategy
+### Control strategy
 Position setpoints published continuously; PX4 handles inner-loop stabilization.
 
-# Failsafe philosophy
+### Failsafe philosophy
 Timeout-based recovery ensures the mission continues even with missing pose data.
 
-# Telemetry
+### Telemetry
 CSV logs intended for post-flight debugging and mission replay.
+
+---
 
 ## Limitations & Known Issues
 
-# Language mismatch
+### Language mismatch
 The project specification required Rust, but the implementation is in Python.
 
-# No pose data
+### No pose data
 /mavros/local_position/pose does not publish updates in the current setup.
 → As a workaround, mission progression uses timeouts instead of feedback.
 
-# CSV telemetry logging not functional
+### CSV telemetry logging not functional
 Because no pose data is received, CSV logs remain mostly empty.
+
+---
 
 ## Future Work
 
