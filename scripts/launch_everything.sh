@@ -8,6 +8,7 @@ x-terminal-emulator -e "bash -c '$HOME/px4_ros_ws/src/drone_controller/scripts/s
 sleep 8
 
 # Starting MAVROS in a new terminal
+
 echo "Starting MAVROS..."
 #x-terminal-emulator -e "bash -c 'ros2 run mavros mavros_node --ros-args -p fcu_url:=udp://:14540@127.0.0.1:14557 --log-level debug; exec bash'" &
 x-terminal-emulator -e "bash -c 'ros2 launch mavros px4.launch fcu_url:="udp://:14540@127.0.0.1:14557"; exec bash'" &

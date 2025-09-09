@@ -6,6 +6,9 @@
   <description>TODO: Package description</description>
   <maintainer email="huzaifa@todo.todo">huzaifa</maintainer>
   <license>TODO: License declaration</license>
+  <exec_depend>python3-csv</exec_depend>
+  <exec_depend>python3-os</exec_depend>
+
 
   <depend>rclpy</depend>
   <depend>px4_msgs</depend>

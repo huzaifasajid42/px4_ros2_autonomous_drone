@@ -1,5 +1,3 @@
-# I have taken the liberty of commenting out important aspects our misison. Please let me know if you require any further clarifications.
-
 import rclpy
 from rclpy.node import Node
 from mavros_msgs.msg import State
@@ -8,6 +6,9 @@ from geometry_msgs.msg import PoseStamped
 from enum import auto, Enum
 import math
 import time
+import csv
+import os
+from datetime import datetime
 
 class DroneState(Enum):
     DISARMED = auto()
@@ -24,6 +25,9 @@ class DroneState(Enum):
 class PositionMissionDrone(Node):
     def __init__(self):
         super().__init__('position_mission_drone')
+        
+        # Initialize telemetry logging first
+        self.telemetry_file = self.setup_telemetry_logging()
 
         # Subscribers
         self.state_sub = self.create_subscription(State, '/mavros/state', self.state_callback, 10)
@@ -45,6 +49,7 @@ class PositionMissionDrone(Node):
         self.current_position = [0.0, 0.0, 0.0]
         self.pose_received = False
         self.waypoint_arrival_time = None
+        self.mavros_state = None  # Initialize mavros_state
 
         # Waypoints
         self.waypoints = [
@@ -61,9 +66,83 @@ class PositionMissionDrone(Node):
         self.waypoint_timeout = 12.0
         self.waypoint_hold_time = 3.0  # seconds to hold at each waypoint
 
-        # Starting streaming setpoints as it is mandatory for our offboard mode.
+        # Start streaming setpoints (mandatory for offboard mode)
         self.setpoint_timer = self.create_timer(0.02, self.publish_setpoints)
         self.get_logger().info("Position control drone initialized")
+
+    def setup_telemetry_logging(self):
+        
+        try:
+            self.get_logger().info(" DEBUG: Starting telemetry setup...")
+            
+            # Create telemetry directory if it doesn't exist
+            telemetry_dir = os.path.expanduser('~/drone_telemetry')
+            self.get_logger().info(f" DEBUG: Telemetry dir: {telemetry_dir}")
+            
+            os.makedirs(telemetry_dir, exist_ok=True)
+            self.get_logger().info(" DEBUG: Directory created")
+            
+            # Create filename with timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = os.path.join(telemetry_dir, f'mission_telemetry_{timestamp}.csv')
+            self.get_logger().info(f" DEBUG: Filename: {filename}")
+            
+            # Create and write CSV header
+            with open(filename, 'w', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow([
+                    'timestamp', 'state', 'x', 'y', 'z', 
+                    'target_x', 'target_y', 'target_z',
+                    'distance_to_target', 'armed', 'mode'
+                ])
+            
+            self.get_logger().info(f" DEBUG: Telemetry logging started: {filename}")
+            return filename
+            
+        except Exception as e:
+            self.get_logger().error(f" DEBUG: FAILED to setup telemetry: {e}")
+            import traceback
+            self.get_logger().error(f" DEBUG: Traceback: {traceback.format_exc()}")
+            return None
+
+    def log_telemetry(self, target_position=None):
+    
+        if self.telemetry_file is None:
+            self.get_logger().warn(" DEBUG: Cannot log - telemetry_file is None!")
+            return
+            
+        if not self.pose_received or not self.mavros_state:
+            return
+        
+        try:
+            with open(self.telemetry_file, 'a', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                
+                # Calculate distance to target
+                if target_position:
+                    dist = self.distance_to(target_position)
+                    target_x, target_y, target_z = target_position
+                else:
+                    dist = 0.0
+                    target_x, target_y, target_z = 0.0, 0.0, 0.0
+                
+                # Write data row
+                writer.writerow([
+                    self.get_clock().now().nanoseconds,
+                    self.current_state.name,
+                    self.current_position[0],
+                    self.current_position[1],
+                    self.current_position[2],
+                    target_x,
+                    target_y, 
+                    target_z,
+                    dist,
+                    self.mavros_state.armed,
+                    self.mavros_state.mode
+                ])
+                
+        except Exception as e:
+            self.get_logger().error(f" DEBUG: Telemetry logging failed: {e}")
 
     def pose_callback(self, msg):
         self.current_pose = msg
@@ -77,6 +156,7 @@ class PositionMissionDrone(Node):
     def state_callback(self, msg):
         current_time = time.time()
         self.mavros_state = msg
+        self.log_telemetry()
 
         if self.current_state == DroneState.DISARMED and msg.connected:
             self.get_logger().info("Connected to MAVROS")
@@ -114,6 +194,14 @@ class PositionMissionDrone(Node):
 
     def publish_setpoints(self):
         current_time = time.time()
+        
+        # Log telemetry based on current state
+        if self.current_state == DroneState.MISSION and self.current_waypoint_index < len(self.waypoints):
+            target = self.waypoints[self.current_waypoint_index]
+            self.log_telemetry(target)
+        else:
+            self.log_telemetry()
+            
         pos_msg = PoseStamped()
         pos_msg.header.stamp = self.get_clock().now().to_msg()
         pos_msg.header.frame_id = "map"
@@ -188,9 +276,10 @@ class PositionMissionDrone(Node):
         elif self.current_state == DroneState.LANDED and self.mavros_state and not self.mavros_state.armed:
             self.get_logger().info("Drone has landed and disarmed. Shutting off our node")
             self.setpoint_timer.cancel()
-            self.get_clock().call_later(0.1, rclpy.shutdown) # Our node willl shutdown once the drone is landed and disarmed.
-        return 
+            self.get_clock().call_later(0.1, rclpy.shutdown)
+            return  # This return is correct - it's at the end of the method
 
+        # THIS MUST EXECUTE - publish the setpoint every time!
         self.pos_pub.publish(pos_msg)
 
     def distance_to(self, target):
